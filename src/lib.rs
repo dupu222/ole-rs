@@ -242,7 +242,7 @@ impl OleFile {
 
         loop {
             next_directory_index =
-                self.sector_allocation_table[next_directory_index as usize].clone();
+                self.sector_allocation_table[next_directory_index as usize];
             // println!("next: {:x?}", next);
             if next_directory_index == constants::CHAIN_END {
                 break;
@@ -306,7 +306,7 @@ impl OleFile {
             } else {
                 raw_mini_stream_data.extend(self.sectors[next_sector as usize].iter());
             }
-            next_sector = self.sector_allocation_table[next_sector as usize].clone();
+            next_sector = self.sector_allocation_table[next_sector as usize];
         }
         raw_mini_stream_data.truncate(mini_stream_size as usize);
         // println!("raw_mini_stream_data {:#?}", raw_mini_stream_data.len());
@@ -1002,9 +1002,9 @@ pub struct DirectoryEntry {
 
     //TODO: do we need these?
     #[derivative(Debug = "ignore")]
-    class_id_guid: [u8; 16],
+    _class_id_guid: [u8; 16],
     #[derivative(Debug = "ignore")]
-    state_bits: [u8; 4],
+    _state_bits: [u8; 4],
 
     creation_time: Option<NaiveDateTime>,
     modification_time: Option<NaiveDateTime>,
@@ -1043,7 +1043,7 @@ impl DirectoryEntry {
         let color = match raw_directory_entry.color_flag {
             constants::NODE_COLOR_RED => Ok(NodeColor::RED),
             constants::NODE_COLOR_BLACK => Ok(NodeColor::BLACK),
-            anything_else @ _ => Err(OleError::InvalidDirectoryEntry(
+            anything_else  => Err(OleError::InvalidDirectoryEntry(
                 "node_color",
                 format!("invalid value: {:x?}", anything_else),
             )),
@@ -1109,7 +1109,7 @@ impl DirectoryEntry {
                 (ObjectType::Storage, location) if location != [0x00; 4] => {
                     Err(OleError::InvalidDirectoryEntry(
                         "starting_sector_location",
-                        format!("starting sector location non-zero for storage object type"),
+                        "starting sector location non-zero for storage object type".to_string(),
                     ))
                 }
                 (ObjectType::Storage, _zero) => Ok(None),
@@ -1168,8 +1168,8 @@ impl DirectoryEntry {
             left_sibling_id,
             right_sibling_id,
             child_id,
-            class_id_guid: raw_directory_entry.class_id,
-            state_bits: raw_directory_entry.state_bits,
+            _class_id_guid: raw_directory_entry.class_id,
+            _state_bits: raw_directory_entry.state_bits,
             creation_time,
             modification_time,
             starting_sector_location,

@@ -19,9 +19,9 @@ async fn main() {
         .expect("unable to get details?");
 
     let file_data = decrypt_bup_bytes(file_data);
-    // tokio::fs::write("/tmp/file_0", file_data)
-    //     .await
-    //     .expect("unable to write file?");
+    tokio::fs::write("/tmp/file_0", file_data)
+        .await
+        .expect("unable to write file?");
 
     // let entries = ole_file.list_streams();
     // println!("entries: {entries:?}");

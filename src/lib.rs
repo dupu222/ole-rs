@@ -11,6 +11,7 @@ pub mod constants;
 pub mod error;
 
 pub trait Readable: Unpin + AsyncRead {}
+
 impl Readable for tokio::fs::File {}
 
 #[derive(Clone, Derivative)]
@@ -241,8 +242,7 @@ impl OleFile {
             .extend(self.sectors[next_directory_index as usize].iter());
 
         loop {
-            next_directory_index =
-                self.sector_allocation_table[next_directory_index as usize];
+            next_directory_index = self.sector_allocation_table[next_directory_index as usize];
             // println!("next: {:x?}", next);
             if next_directory_index == constants::CHAIN_END {
                 break;
@@ -322,6 +322,7 @@ impl OleFile {
         Ok(())
     }
 }
+
 #[derive(Clone, Derivative)]
 #[derivative(Debug)]
 pub struct OleHeader {
@@ -455,6 +456,7 @@ struct RawFileHeader {
     #[derivative(Debug = "ignore")]
     sector_allocation_table_head: Vec<u32>,
 }
+
 async fn parse_raw_header<R>(read: &mut R) -> Result<RawFileHeader, OleError>
 where
     R: Readable,
@@ -992,7 +994,8 @@ pub enum NodeColor {
 #[derive(Clone, Derivative)]
 #[derivative(Debug)]
 pub struct DirectoryEntry {
-    index: usize, //the index in the directory array
+    index: usize,
+    //the index in the directory array
     object_type: ObjectType,
     name: String,
     color: NodeColor,
@@ -1043,7 +1046,7 @@ impl DirectoryEntry {
         let color = match raw_directory_entry.color_flag {
             constants::NODE_COLOR_RED => Ok(NodeColor::RED),
             constants::NODE_COLOR_BLACK => Ok(NodeColor::BLACK),
-            anything_else  => Err(OleError::InvalidDirectoryEntry(
+            anything_else => Err(OleError::InvalidDirectoryEntry(
                 "node_color",
                 format!("invalid value: {:x?}", anything_else),
             )),
@@ -1105,23 +1108,12 @@ impl DirectoryEntry {
         // object. For a root storage object, this field MUST contain the first sector of the mini stream, if the
         // mini stream exists. For a storage object, this field MUST be set to all zeroes.
         let starting_sector_location =
+            // this code previously checked that storage entries have a zero starting sector location
+            // but there are known cases where this trips in real files, so removed this check.
             match (object_type, raw_directory_entry.starting_sector_location) {
-                (ObjectType::Storage, location) if location != [0x00; 4] => {
-                    Err(OleError::InvalidDirectoryEntry(
-                        "starting_sector_location",
-                        "starting sector location non-zero for storage object type".to_string(),
-                    ))
-                }
-                (ObjectType::Storage, _zero) => Ok(None),
-                //the spec says "if the mini stream exists", so i don't think i can do this.
-                // (ObjectType::RootStorage, location) if location == [0x00; 4] => {
-                //     Err(OleError::InvalidDirectoryEntry(
-                //         "starting_sector_location",
-                //         format!("missing starting sector location for root storage object type"),
-                //     ))
-                // }
-                (_, location) => Ok(Some(u32::from_le_bytes(location))),
-            }?;
+                (ObjectType::Storage, _assumed_zero) => None,
+                (_, location) => Some(u32::from_le_bytes(location)),
+            };
 
         let stream_size = if ole_file_header.major_version == constants::MAJOR_VERSION_3_VALUE {
             /*

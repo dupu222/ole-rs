@@ -9,13 +9,13 @@ async fn main() {
 
     println!("parsed file: {:#?}", ole_file);
     let data = ole_file
-        .open_stream("Details")
+        .open_stream(&["Details"])
         .expect("unable to get details?");
 
     let details_string: String = decrypt_bup_string(data);
     println!("details string: {}", details_string);
     let file_data = ole_file
-        .open_stream("File_0")
+        .open_stream(&["File_0"])
         .expect("unable to get details?");
 
     let file_data = decrypt_bup_bytes(file_data);

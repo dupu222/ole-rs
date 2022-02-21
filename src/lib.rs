@@ -45,14 +45,96 @@ impl OleFile {
             .collect()
     }
 
-    pub fn open_stream(&mut self, stream_name: &str) -> Result<Vec<u8>, OleError> {
-        // println!("opening stream: {stream_name}");
-        let potential_entries = self
-            .directory_entries
+    pub fn list_storage(&self) -> Vec<String> {
+        self.directory_entries
             .iter()
-            .filter(|entry| entry.name == stream_name);
+            .filter_map(|entry| {
+                if entry.object_type == ObjectType::Storage {
+                    Some(entry.name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
 
-        for directory_entry in potential_entries {
+    fn find_stream(
+        &self,
+        stream_path: &[&str],
+        parent: Option<&DirectoryEntry>,
+    ) -> Option<&DirectoryEntry> {
+        let first_entry = stream_path[0];
+        let remainder = &stream_path[1..];
+        let remaining_len = remainder.len();
+
+        match parent {
+            Some(parent) => {
+                println!("recursing_parent_entry: {:?}", parent);
+                // this is a recursive case
+                let mut entries_to_search = vec![];
+                if let Some(child_id) = parent.child_id {
+                    let child = self.directory_entries.get(child_id as usize).unwrap();
+                    entries_to_search.push((child, true));
+                }
+                if let Some(left_sibling_id) = parent.left_sibling_id {
+                    entries_to_search.push((
+                        self.directory_entries
+                            .get(left_sibling_id as usize)
+                            .unwrap(),
+                        false,
+                    ));
+                }
+                if let Some(right_sibling_id) = parent.right_sibling_id {
+                    entries_to_search.push((
+                        self.directory_entries
+                            .get(right_sibling_id as usize)
+                            .unwrap(),
+                        false,
+                    ));
+                }
+                for (entry, is_child) in entries_to_search {
+                    if entry.name == first_entry {
+                        return if remaining_len == 0 {
+                            println!("found_entry: {:?}", entry);
+                            Some(entry)
+                        } else if is_child {
+                            self.find_stream(remainder, Some(entry))
+                        } else {
+                            self.find_stream(stream_path, Some(entry))
+                        };
+                    } else if let Some(found_entry) = self.find_stream(stream_path, Some(entry)) {
+                        return Some(found_entry);
+                    }
+                }
+                None
+            }
+            None => {
+                //this is the root case
+                if stream_path.is_empty() {
+                    return None;
+                }
+                if let Some(found_entry) = self
+                    .directory_entries
+                    .iter()
+                    .find(|entry| entry.name == first_entry)
+                {
+                    //handle this
+                    if remaining_len == 0 {
+                        println!("found_entry: {:?}", found_entry);
+                        Some(found_entry)
+                    } else {
+                        self.find_stream(remainder, Some(found_entry))
+                    }
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    pub fn open_stream(&mut self, stream_path: &[&str]) -> Result<Vec<u8>, OleError> {
+        println!("opening stream: {stream_path:?}");
+        if let Some(directory_entry) = self.find_stream(stream_path, None) {
             if directory_entry.object_type == ObjectType::Stream {
                 let mut data = vec![];
                 let mut collected_bytes = 0;
@@ -100,6 +182,7 @@ impl OleFile {
                 return Ok(data);
             }
         }
+
         Err(OleError::DirectoryEntryNotFound)
     }
 

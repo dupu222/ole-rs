@@ -69,7 +69,7 @@ impl OleFile {
 
         match parent {
             Some(parent) => {
-                println!("recursing_parent_entry: {:?}", parent);
+                // println!("recursing_parent_entry: {:?}", parent);
                 // this is a recursive case
                 let mut entries_to_search = vec![];
                 if let Some(child_id) = parent.child_id {
@@ -95,7 +95,7 @@ impl OleFile {
                 for (entry, is_child) in entries_to_search {
                     if entry.name == first_entry {
                         return if remaining_len == 0 {
-                            println!("found_entry: {:?}", entry);
+                            // println!("found_entry: {:?}", entry);
                             Some(entry)
                         } else if is_child {
                             self.find_stream(remainder, Some(entry))
@@ -120,7 +120,7 @@ impl OleFile {
                 {
                     //handle this
                     if remaining_len == 0 {
-                        println!("found_entry: {:?}", found_entry);
+                        // println!("found_entry: {:?}", found_entry);
                         Some(found_entry)
                     } else {
                         self.find_stream(remainder, Some(found_entry))
@@ -133,7 +133,7 @@ impl OleFile {
     }
 
     pub fn open_stream(&mut self, stream_path: &[&str]) -> Result<Vec<u8>, OleError> {
-        println!("opening stream: {stream_path:?}");
+        // println!("opening stream: {stream_path:?}");
         if let Some(directory_entry) = self.find_stream(stream_path, None) {
             if directory_entry.object_type == ObjectType::Stream {
                 let mut data = vec![];

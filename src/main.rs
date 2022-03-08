@@ -1,27 +1,26 @@
+mod bup_utils;
+
 use ole_rs::OleFile;
 
 #[tokio::main]
 async fn main() {
-    let file = tokio::fs::File::open("./ole_files/bup_test.bup")
+    let file = tokio::fs::File::open("ole_files/encryption/encrypted/rc4cryptoapi_password.doc")
         .await
         .expect("no file?");
-    let mut ole_file = OleFile::parse(file).await.expect("error parsing file");
 
-    println!("parsed file: {:#?}", ole_file);
-    let data = ole_file
-        .open_stream(&["Details"])
-        .expect("unable to get details?");
+    let ole_file = match OleFile::parse(file).await {
+        Ok(ole_file) => ole_file,
+        Err(error) => {
+            eprintln!(
+                "error parsing ole file, invalid or not an OLE file.  error details: {}",
+                error
+            );
+            std::process::exit(1);
+        }
+    };
 
-    let details_string: String = decrypt_bup_string(data);
-    println!("details string: {}", details_string);
-    let file_data = ole_file
-        .open_stream(&["File_0"])
-        .expect("unable to get details?");
-
-    let file_data = decrypt_bup_bytes(file_data);
-    tokio::fs::write("/tmp/file_0", file_data)
-        .await
-        .expect("unable to write file?");
+    // println!("parsed file: {:#?}", ole_file);
+    // bup_utils::check_bup_file(&ole_file).await;
 
     // let entries = ole_file.list_streams();
     // println!("entries: {entries:?}");
@@ -29,7 +28,7 @@ async fn main() {
     // let file_2 = tokio::fs::File::open("./ole_files/oledoc1.doc_")
     //     .await
     //     .expect("no file?");
-    // let mut ole_file_2 = OleFile::parse(file_2).await.expect("error parsing file");
+    // let ole_file_2 = OleFile::parse(file_2).await.expect("error parsing file");
     //
     // // println!("ole_file_2: {ole_file_2:#?}");
     // let entries_2 = ole_file_2.list_streams();
@@ -38,17 +37,37 @@ async fn main() {
     // let file_3 = tokio::fs::File::open("./ole_files/maldoc.xls")
     //     .await
     //     .expect("no file?");
-    // let mut ole_file_3 = OleFile::parse(file_3).await.expect("error parsing file");
+    // let ole_file_3 = OleFile::parse(file_3).await.expect("error parsing file");
     //
     // println!("ole_file_3: {ole_file_3:#?}");
     // let entries_3 = ole_file_3.list_streams();
     // println!("entries_3: {entries_3:#?}");
 }
 
-fn decrypt_bup_string(bup_data: Vec<u8>) -> String {
-    bup_data.iter().map(|byte| (byte ^ 0x6A) as char).collect()
-}
 
-fn decrypt_bup_bytes(bup_data: Vec<u8>) -> Vec<u8> {
-    bup_data.iter().map(|byte| byte ^ 0x6A).collect()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    pub async fn test_word_encryption_detection_on() {
+        let file = tokio::fs::File::open("ole_files/encryption/encrypted/rc4cryptoapi_password.doc")
+            .await
+            .expect("no file?");
+
+        let ole_file = OleFile::parse(file).await.unwrap();
+
+        assert!(ole_file.encrypted);
+    }
+
+    #[tokio::test]
+    pub async fn test_word_encryption_detection_off() {
+        let file = tokio::fs::File::open("ole_files/encryption/plaintext/plain.doc")
+            .await
+            .expect("no file?");
+
+        let ole_file = OleFile::parse(file).await.unwrap();
+
+        assert!(!ole_file.encrypted);
+    }
 }

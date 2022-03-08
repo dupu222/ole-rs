@@ -6,9 +6,12 @@ use derivative::Derivative;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 use crate::error::{HeaderErrorType, OleError};
+use crate::file_typer::OleFileType;
 
 pub mod constants;
+pub mod encryption;
 pub mod error;
+pub mod file_typer;
 
 pub trait Readable: Unpin + AsyncRead {}
 
@@ -29,9 +32,15 @@ pub struct OleFile {
     directory_entries: Vec<DirectoryEntry>,
     #[derivative(Debug = "ignore")]
     mini_stream: Vec<[u8; 64]>,
+    file_type: OleFileType,
+    pub encrypted: bool,
 }
 
 impl OleFile {
+    pub fn root(&self) -> &DirectoryEntry {
+        &self.directory_entries[0]
+    }
+
     pub fn list_streams(&self) -> Vec<String> {
         self.directory_entries
             .iter()
@@ -132,7 +141,7 @@ impl OleFile {
         }
     }
 
-    pub fn open_stream(&mut self, stream_path: &[&str]) -> Result<Vec<u8>, OleError> {
+    pub fn open_stream(&self, stream_path: &[&str]) -> Result<Vec<u8>, OleError> {
         // println!("opening stream: {stream_path:?}");
         if let Some(directory_entry) = self.find_stream(stream_path, None) {
             if directory_entry.object_type == ObjectType::Stream {
@@ -250,13 +259,16 @@ impl OleFile {
             directory_stream_data: vec![],
             directory_entries: vec![],
             mini_stream: vec![],
+            file_type: OleFileType::Generic,
+            encrypted: false,
         };
 
         self_to_init.initialize_sector_allocation_table()?;
         self_to_init.initialize_short_sector_allocation_table()?;
         self_to_init.initialize_directory_stream()?;
         self_to_init.initialize_mini_stream()?;
-
+        self_to_init.file_type = file_typer::type_file(self_to_init.root());
+        self_to_init.encrypted = encryption::is_encrypted(&self_to_init);
         Ok(self_to_init)
     }
 
@@ -592,22 +604,13 @@ where
             }
         })?;
     //https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-CFB/%5bMS-CFB%5d.pdf
-    //says this SHOULD be set to 0x003E.
-    let minor_version: [u8; 2] = (&header[24..26])
-        .try_into()
-        .map_err(|err: TryFromSliceError| {
-            OleError::InvalidHeader(HeaderErrorType::Parsing("minor_version", err.to_string()))
-        })
-        .and_then(|minor_version| {
-            if minor_version != constants::CORRECT_MINOR_VERSION {
-                Err(OleError::InvalidHeader(HeaderErrorType::Parsing(
-                    "minor_version",
-                    format!("incorrect minor version {:x?}", minor_version),
-                )))
-            } else {
-                Ok(minor_version)
-            }
-        })?;
+    //says this SHOULD be set to 0x003E.  But word95 sets it to something else because reasons.
+    let minor_version: [u8; 2] =
+        (&header[24..26])
+            .try_into()
+            .map_err(|err: TryFromSliceError| {
+                OleError::InvalidHeader(HeaderErrorType::Parsing("minor_version", err.to_string()))
+            })?;
     //https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-CFB/%5bMS-CFB%5d.pdf
     //This field MUST be set to either
     // 0x0003 (version 3) or 0x0004 (version 4).
@@ -1086,9 +1089,9 @@ pub struct DirectoryEntry {
     right_sibling_id: Option<u32>,
     child_id: Option<u32>,
 
-    //TODO: do we need these?
-    #[derivative(Debug = "ignore")]
-    _class_id_guid: [u8; 16],
+    class_id: Option<String>,
+
+    //TODO: do we need this?
     #[derivative(Debug = "ignore")]
     _state_bits: [u8; 4],
 
@@ -1235,6 +1238,33 @@ impl DirectoryEntry {
             ));
         }
 
+        let class_id = match raw_directory_entry.class_id {
+            empty if empty == [0x00; 16] => None,
+            bytes => {
+                let a = i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                let b = i16::from_le_bytes([bytes[4], bytes[5]]);
+                let c = i16::from_le_bytes([bytes[6], bytes[7]]);
+
+                Some(
+                    format!(
+                        "{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+                        a,
+                        b,
+                        c,
+                        bytes[8],
+                        bytes[9],
+                        bytes[10],
+                        bytes[11],
+                        bytes[12],
+                        bytes[13],
+                        bytes[14],
+                        bytes[15]
+                    )
+                    .to_uppercase(),
+                )
+            }
+        };
+
         Ok(Self {
             index,
             object_type,
@@ -1243,7 +1273,7 @@ impl DirectoryEntry {
             left_sibling_id,
             right_sibling_id,
             child_id,
-            _class_id_guid: raw_directory_entry.class_id,
+            class_id,
             _state_bits: raw_directory_entry.state_bits,
             creation_time,
             modification_time,

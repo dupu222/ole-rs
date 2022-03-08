@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum HeaderErrorType {
-    #[error("the magic number was expected but not found, found {0:?} instead")]
+    #[error("the magic number was expected but not found, found {0:?} instead.  This is likely NOT an OLE file.")]
     WrongMagicBytes(Vec<u8>),
     #[error("tried to read {0} bytes, found {1} bytes")]
     NotEnoughBytes(usize, usize),

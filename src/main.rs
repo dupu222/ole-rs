@@ -70,4 +70,16 @@ mod tests {
 
         assert!(!ole_file.encrypted);
     }
+
+    #[tokio::test]
+    pub async fn test_greater_then_109_fat() {
+        let file = tokio::fs::File::open("ole_files/oleObject3.bin")
+            .await
+            .expect("no file?");
+
+        let ole_file = OleFile::parse(file).await.unwrap();
+
+        let ole10_native = ole_file.open_stream(&["\u{1}Ole10Native"]).expect("unable to get stream");
+        assert!(ole10_native.len() > 7 * 1024 * 1024);
+    }
 }

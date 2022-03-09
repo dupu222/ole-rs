@@ -273,6 +273,7 @@ impl OleFile {
     }
 
     fn initialize_sector_allocation_table(&mut self) -> Result<(), OleError> {
+        // first 109 sectors, sector_allocation_table_head always lt 109
         for sector_index in self.header.sector_allocation_table_head.iter() {
             // println!("sector_index: {:#x?}", *sector_index);
             if *sector_index == constants::UNALLOCATED_SECTOR
@@ -290,14 +291,64 @@ impl OleFile {
         //     self.sector_allocation_table
         // );
 
+        // DI-FAT used
+        // https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/0afa4e43-b18f-432a-9917-4f276eca7a73
         if self.header.master_sector_allocation_table_len > 0 {
-            return Err(OleError::CurrentlyUnimplemented(
-                "MSAT/DI-FAT unsupported todo impl me".to_string(),
-            ));
+            // println!("MSAT/DI-FAT used, File size must > 6.8MB");
+            //  As an optimization, the first 109 FAT sectors are represented within the header itself.
+            if self.header.sector_allocation_table_len < 109 {
+                return Err(OleError::InvalidHeader(HeaderErrorType::Parsing(
+                    "MSAT/DI-FAT must be at least 109 sectors",
+                    "n/a".to_string(),
+                )));
+            }
+            //  The remaining sectors are represented by the Master Sector Allocation Table (MSAT).
+            let mut remaining_fats = self.header.sector_allocation_table_len - 109;
+
+            let di_fats_len = self.header.master_sector_allocation_table_len as usize;
+
+            // fist DI-FAT sector id in the header, the rest are in the tail of the MSAT sector
+            let mut next_di_fat_sector_id = self.header.master_sector_allocation_table_first_sector as usize;
+            for i in 0..di_fats_len {
+                // println!("DI-FAT sector [{}] sec_id: {}", i, next_di_fat_sector_id);
+                let di_fat_block = self.sectors[next_di_fat_sector_id]
+                    .chunks_exact(4)
+                    .map(|quad| u32::from_le_bytes([quad[0], quad[1], quad[2], quad[3]]))
+                    .collect::<Vec<_>>();
+
+                // first 127 u32 is the FAT sec_id.
+                for sector_index in di_fat_block.iter().take(127) {
+                    if *sector_index == constants::UNALLOCATED_SECTOR
+                        || *sector_index == constants::CHAIN_END
+                    {
+                        break;
+                    }
+                    let sector = self.sectors[*sector_index as usize]
+                        .chunks_exact(4)
+                        .map(|quad| u32::from_le_bytes([quad[0], quad[1], quad[2], quad[3]]));
+                    self.sector_allocation_table.extend(sector);
+                    remaining_fats-= 1;
+                }
+                let last_sec_id = di_fat_block.last().unwrap();// never failed!
+                if *last_sec_id == constants::UNALLOCATED_SECTOR
+                    || *last_sec_id == constants::CHAIN_END
+                {
+                    break;
+                }
+                // last DIFAT pointer is next DIFAT sector:
+                next_di_fat_sector_id = *last_sec_id as usize;
+            }
+            if remaining_fats > 0 {
+                return Err(OleError::InvalidHeader(HeaderErrorType::Parsing(
+                    "FAT sectors not enough",
+                    format!("remaining_fats: {}", remaining_fats),
+                )));
+            }
         }
 
         Ok(())
     }
+
     fn initialize_short_sector_allocation_table(&mut self) -> Result<(), OleError> {
         if self.header.short_sector_allocation_table_len == 0
             || self.header.short_sector_allocation_table_first_sector == constants::CHAIN_END

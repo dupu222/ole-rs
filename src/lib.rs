@@ -635,7 +635,7 @@ where
         })?;
 
     //https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-CFB/%5bMS-CFB%5d.pdf
-    //Reserved and unused class ID that MUST be set to all zeroes
+    //Reserved and unused class ID that MUST be set to all zeroes. But some case it is not zero
     let _: [u8; 16] = (&header[8..24])
         .try_into()
         .map_err(|err: TryFromSliceError| {
@@ -643,17 +643,8 @@ where
                 "class_identifier",
                 err.to_string(),
             ))
-        })
-        .and_then(|class_identifier| {
-            if class_identifier != [0u8; 16] {
-                Err(OleError::InvalidHeader(HeaderErrorType::Parsing(
-                    "class_identifier",
-                    "non-zero entries in class_identifier field".to_string(),
-                )))
-            } else {
-                Ok(class_identifier)
-            }
         })?;
+
     //https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-CFB/%5bMS-CFB%5d.pdf
     //says this SHOULD be set to 0x003E.  But word95 sets it to something else because reasons.
     let minor_version: [u8; 2] =

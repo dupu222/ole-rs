@@ -74,5 +74,6 @@ pub fn is_encrypted(ole_file: &OleFile) -> bool {
     //     document_type.as_ref().unwrap().doc_type(),
     // );
 
-    document_type.as_ref().unwrap().is_encrypted()
+    // document_type.as_ref().unwrap().is_encrypted()
+    document_type.as_ref().map(|handler| handler.is_encrypted()).unwrap_or_default()
 }
